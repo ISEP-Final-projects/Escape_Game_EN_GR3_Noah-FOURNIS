@@ -1,0 +1,236 @@
+import tkinter as tk
+import random
+import json
+
+# Global variables
+root = tk.Tk()
+root.title("Escape Game")
+root.geometry("600x400")
+root.resizable(False, False)
+
+current_game = None
+game_order = []
+game_index = 0
+game_state = {
+    "completed_games": [],
+    "current_game": None
+}
+
+# Widgets
+widgets = {}
+number_to_guess = None
+number_attempts = 0
+
+pattern = []
+user_pattern = []
+symbol_buttons = []
+pattern_index = 0
+
+lock_code = []
+lock_attempts = 0
+
+# --- Utility Functions ---
+
+def clear_window():
+    for widget in root.winfo_children():
+        widget.destroy()
+
+def show_message(text, delay=0, next_fn=None):
+    clear_window()
+    label = tk.Label(root, text=text, font=("Arial", 16))
+    label.pack(pady=20)
+    if delay > 0 and next_fn:
+        root.after(delay, next_fn)
+
+def save_game():
+    with open("savegame.json", "w") as f:
+        json.dump(game_state, f)
+    show_message("Game saved!", 2000, show_continue_prompt)
+
+def show_continue_prompt():
+    clear_window()
+    label = tk.Label(root, text="Would you like to continue?", font=("Arial", 16))
+    label.pack(pady=20)
+    tk.Button(root, text="Continue", command=start_next_game).pack(pady=5)
+    tk.Button(root, text="Exit Game", command=root.quit).pack(pady=5)
+
+def show_save_prompt():
+    show_message("Please save your progress", 2000, show_save_button)
+
+def show_save_button():
+    clear_window()
+    label = tk.Label(root, text="Please save your progress", font=("Arial", 16))
+    label.pack(pady=20)
+    tk.Button(root, text="Save", command=save_game).pack(pady=5)
+
+# --- Game Manager ---
+
+def game_won():
+    show_message("You did it!", 2000, show_save_prompt)
+    game_state["completed_games"].append(current_game)
+    if len(game_state["completed_games"]) == 3:
+        root.after(6000, game_complete)
+    else:
+        root.after(6000, show_continue_prompt)
+
+def game_failed():
+    if current_game == "guess_number":
+        start_guess_number()
+    else:
+        reset_game()
+
+def game_complete():
+    show_message("You escaped!", 0, lambda: tk.Button(root, text="Exit Game", command=root.quit).pack(pady=10))
+
+def reset_game():
+    game_state["completed_games"] = []
+    game_state["current_game"] = None
+    start_game_selection()
+
+def start_next_game():
+    global game_index, current_game
+    game_index += 1
+    if game_index < 3:
+        current_game = game_order[game_index]
+        game_state["current_game"] = current_game
+        start_current_game()
+    else:
+        game_complete()
+
+def start_current_game():
+    if current_game == "guess_number":
+        start_guess_number()
+    elif current_game == "pattern_memory":
+        start_pattern_memory()
+    elif current_game == "lock_combination":
+        start_lock_combination()
+
+def start_game_selection():
+    global game_order, game_index, current_game
+    clear_window()
+    game_order = ["guess_number", "pattern_memory", "lock_combination"]
+    random.shuffle(game_order)
+    game_index = 0
+    tk.Label(root, text="Choose a game to start with:", font=("Arial", 16)).pack(pady=20)
+    for game_id, game_name in [("guess_number", "Guess the Number"), ("pattern_memory", "Pattern Memory"), ("lock_combination", "Lock Combination")]:
+        tk.Button(root, text=game_name, command=lambda g=game_id: start_selected_game(g)).pack(pady=5)
+
+def start_selected_game(game_id):
+    global current_game, game_order, game_index
+    current_game = game_id
+    game_order.remove(game_id)
+    random.shuffle(game_order)
+    game_order.insert(0, game_id)
+    game_index = 0
+    game_state["current_game"] = current_game
+    start_current_game()
+
+# --- Game 1: Guess the Number ---
+
+def start_guess_number():
+    global number_to_guess, number_attempts
+    clear_window()
+    number_to_guess = random.randint(1, 10)
+    number_attempts = 5
+
+    tk.Label(root, text="Guess the number (1-10):", font=("Arial", 16)).pack(pady=10)
+    widgets["number_entry"] = tk.Entry(root)
+    widgets["number_entry"].pack(pady=5)
+    widgets["number_button"] = tk.Button(root, text="Submit", command=submit_guess_number)
+    widgets["number_button"].pack(pady=5)
+    widgets["number_feedback"] = tk.Label(root, text="")
+    widgets["number_feedback"].pack(pady=10)
+
+def submit_guess_number():
+    global number_to_guess, number_attempts
+    try:
+        guess = int(widgets["number_entry"].get())
+    except ValueError:
+        return
+
+    number_attempts -= 1
+    if guess == number_to_guess:
+        game_won()
+    elif number_attempts == 0:
+        show_message("You failed! Try again...", 2000, game_failed)
+    else:
+        hint = "higher" if guess < number_to_guess else "lower"
+        widgets["number_feedback"].config(text=f"Try {hint}. Attempts left: {number_attempts}")
+
+# --- Game 2: Pattern Memory ---
+
+def start_pattern_memory():
+    global pattern, user_pattern, pattern_index
+    clear_window()
+    pattern = random.sample(["★", "●", "■", "◆"], 2)
+    user_pattern = []
+    pattern_index = 0
+
+    label = tk.Label(root, text="Memorize this pattern:", font=("Arial", 16))
+    label.pack(pady=10)
+    pattern_label = tk.Label(root, text=" ".join(pattern), font=("Arial", 24))
+    pattern_label.pack(pady=10)
+
+    root.after(3000, lambda: show_pattern_buttons(label, pattern_label))
+
+def show_pattern_buttons(label, pattern_label):
+    global symbol_buttons
+    label.destroy()
+    pattern_label.destroy()
+    symbols = ["★", "●", "■", "◆"]
+    tk.Label(root, text="Repeat the pattern:", font=("Arial", 16)).pack(pady=10)
+    symbol_buttons = []
+    for sym in symbols:
+        btn = tk.Button(root, text=sym, font=("Arial", 20), command=lambda s=sym: submit_pattern_symbol(s))
+        btn.pack(side="left", padx=10, pady=20)
+        symbol_buttons.append(btn)
+
+def submit_pattern_symbol(symbol):
+    global pattern_index, user_pattern
+    user_pattern.append(symbol)
+    pattern_index += 1
+    if pattern_index == len(pattern):
+        for btn in symbol_buttons:
+            btn.destroy()
+        if user_pattern == pattern:
+            game_won()
+        else:
+            show_message("Incorrect pattern!", 2000, game_failed)
+
+# --- Game 3: Lock Combination ---
+
+def start_lock_combination():
+    global lock_code, lock_attempts
+    clear_window()
+    lock_code = [random.randint(0, 9) for _ in range(3)]
+    lock_attempts = 5
+
+    tk.Label(root, text="Enter the 3-digit lock code:", font=("Arial", 16)).pack(pady=10)
+    widgets["lock_entry"] = tk.Entry(root)
+    widgets["lock_entry"].pack(pady=5)
+    tk.Button(root, text="Submit", command=submit_lock_code).pack(pady=5)
+    widgets["lock_feedback"] = tk.Label(root, text="")
+    widgets["lock_feedback"].pack(pady=10)
+
+def submit_lock_code():
+    global lock_attempts
+    entry = widgets["lock_entry"].get()
+    if len(entry) != 3 or not entry.isdigit():
+        return
+    guess = [int(d) for d in entry]
+    correct = [i + 1 for i in range(3) if guess[i] == lock_code[i]]
+    if guess == lock_code:
+        game_won()
+    else:
+        lock_attempts -= 1
+        if lock_attempts == 0:
+            show_message("Code incorrect! Try again...", 2000, game_failed)
+        else:
+            # Provide feedback for the correct digits
+            correct_digits = ", ".join([f"digit {i+1}: {lock_code[i]}" for i in range(3) if guess[i] == lock_code[i]])
+            feedback_message = f"Correct digits: {correct_digits}. Attempts left: {lock_attempts}"
+            widgets["lock_feedback"].config(text=feedback_message)
+
+# Start the game
+start_game_selection()
+root.mainloop()
